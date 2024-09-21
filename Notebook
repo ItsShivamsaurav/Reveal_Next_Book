@@ -1,0 +1,50 @@
+import pandas as pd
+books = pd.read_csv('C:/Users/saura/Downloads/Book/books.csv')
+ratings = pd.read_csv('C:/Users/saura/Downloads/Book/ratings.csv')
+
+user_book_matrix = pd.pivot_table(ratings, index='user_id', columns='book_id', values='rating')
+user_book_matrix.fillna(0, inplace=True)
+
+from sklearn.neighbors import NearestNeighbors
+import numpy as np
+model_knn = NearestNeighbors(metric='cosine', algorithm='brute')
+model_knn.fit(user_book_matrix.values)
+
+def recommend_books(user_id, n_recommendations=5):
+    if user_id not in user_book_matrix.index:
+        return f"User ID {user_id} not found in the dataset."
+
+    user_index = user_book_matrix.index.get_loc(user_id)
+    
+    distances, indices = model_knn.kneighbors(user_book_matrix.iloc[user_index, :].values.reshape(1, -1), n_neighbors=10)
+    
+    similar_users = indices.flatten()[1:]  # Skip the first result as it's the user themselves
+    recommended_books = []
+    
+    for similar_user in similar_users:
+        similar_user_ratings = user_book_matrix.iloc[similar_user]
+        high_rated_books = similar_user_ratings[similar_user_ratings >= 4].index.tolist()
+        recommended_books.extend(high_rated_books)
+
+    user_rated_books = user_book_matrix.columns[user_book_matrix.iloc[user_index] > 0].tolist()
+    final_recommendations = [book for book in recommended_books if book not in user_rated_books]
+    
+    if not final_recommendations:
+        print(f"No new recommendations available for User ID {user_id}. Recommending popular books instead.")
+        fallback_books = books.sort_values(by='average_rating', ascending=False).head(n_recommendations)
+        return fallback_books[['title', 'authors', 'original_publication_year']]
+
+    recommended_books_df = books[books['book_id'].isin(final_recommendations)]
+    
+    if recommended_books_df.empty:
+        recommended_books_df = books[books['best_book_id'].isin(final_recommendations)]
+    
+    if recommended_books_df.empty:
+        print("No matching books found in the books dataset")
+        print("Recommending popular books instead:")
+        fallback_books = books.sort_values(by='average_rating', ascending=False).head(n_recommendations)
+        return fallback_books[['title', 'authors', 'original_publication_year']]
+    
+    return recommended_books_df[['title', 'authors', 'original_publication_year']].head(n_recommendations)
+user_id=int(input("Enter the user_id"))          
+print(recommend_books(user_id, n_recommendations=5))
